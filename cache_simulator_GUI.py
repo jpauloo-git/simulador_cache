@@ -1,19 +1,18 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import random
-from collections import deque
-import io
-import base64
-from PIL import Image
-from io import BytesIO
-import csv
-import dearpygui.dearpygui as dpg
-import time
-import sys
-from datetime import datetime
-import os
+# Importações necessárias para funcionalidades diversas
+import numpy as np                      # Biblioteca para computação numérica
+import matplotlib.pyplot as plt        # Biblioteca para visualização gráfica
+import random                          # Biblioteca padrão para geração de números aleatórios
+from collections import deque          # Deque (fila dupla) para simulações de políticas de cache
+import io, base64                      # Para manipulação de fluxos de bytes e codificação
+from PIL import Image                  # Para manipulação de imagens
+from io import BytesIO                 # Para fluxo de bytes em memória
+import csv                             # Para leitura/escrita de arquivos CSV
+import dearpygui.dearpygui as dpg     # Biblioteca GUI para interface gráfica
+import time, sys, os                   # Utilitários do sistema e tempo
+from datetime import datetime          # Para manipulação de datas e horários
 
-# Classe que intercepta os print()s e envia para a input_text:
+# ------------------------------------------------------------------------------
+# Redirecionador de saída padrão (print) para uma tag do DearPyGUI
 class DPGRedirector:
     def __init__(self, tag):
         self.tag = tag
@@ -21,50 +20,55 @@ class DPGRedirector:
 
     def write(self, text):
         self.buffer += text
-        # Atualiza a interface sem apagar o que já existe
         current_text = dpg.get_value(self.tag)
         dpg.set_value(self.tag, current_text + text)
 
     def flush(self):
-        pass  # Para compatibilidade com sys.stdout.flush()
-		
+        pass  # Método necessário para compatibilidade com sys.stdout
+
+# Lista global para armazenar tags de séries de plotagem (caso visualizações sejam usadas)
 plot_series_tags = []
-# Funçoes de validação das entradas
+
+# ------------------------------------------------------------------------------
+# Verifica se um número é potência de 2 (útil para parâmetros de cache válidos)
 def is_power_of_two(x):
     return (x != 0) and ((x & (x - 1)) == 0)
 
-
-# --------------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Gera um padrão de acessos à memória simulando comportamentos realistas
 def gerar_padrao_realista(acessos, memory_size, regioes_quentes, prob_temporal, prob_espacial, prob_quente, bloco_tamanho):
     padrao = []
     endereco_anterior = random.randint(0, memory_size - 1)
     for _ in range(acessos):
         r = random.random()
         if r < prob_temporal:
+            # Repetição do endereço anterior (localidade temporal)
             endereco = endereco_anterior
         elif r < prob_temporal + prob_espacial:
-            # deslocamento = random.randint(-bloco_tamanho // 4, bloco_tamanho // 4)
+            # Acesso a um endereço próximo ao anterior (localidade espacial)
             deslocamento = random.randint(-16, 16)
             endereco = max(0, min(memory_size - 1, endereco_anterior + deslocamento))
         elif r < prob_temporal + prob_espacial + prob_quente:
+            # Acesso a uma região quente
             base = random.choice(regioes_quentes)
             deslocamento = random.randint(0, 3)
             endereco = min(memory_size - 1, base + deslocamento)
         else:
+            # Acesso completamente aleatório
             endereco = random.randint(0, memory_size - 1)
+
         padrao.append(endereco)
         endereco_anterior = endereco
+
     return padrao
-# --------------------------------------------------------------------------------------
-# FIFO
+
+# ------------------------------------------------------------------------------
+# Simulação de cache com política de substituição FIFO
 def simular_cache_FIFO(padrao_acesso, cache_lines, associatividade, bloco_tamanho):
-    
     num_conjuntos = cache_lines // associatividade
-    cache = [[] for _ in range(num_conjuntos)]
-    hits = 0
-    misses = 0
-    conjunto_log = []
-    hit_log = []
+    cache = [[] for _ in range(num_conjuntos)]  # Lista de conjuntos de cache
+    hits, misses = 0, 0
+    conjunto_log, hit_log = [], []
 
     for endereco in padrao_acesso:
         bloco = endereco // bloco_tamanho
@@ -80,51 +84,20 @@ def simular_cache_FIFO(padrao_acesso, cache_lines, associatividade, bloco_tamanh
             if len(conjunto_atual) < associatividade:
                 conjunto_atual.append(bloco)
             else:
-                conjunto_atual.pop(0)
+                conjunto_atual.pop(0)  # Remove o mais antigo
                 conjunto_atual.append(bloco)
 
         conjunto_log.append(conjunto)
 
     return conjunto_log, hit_log
 
-# FIFO com deque (deveria ser mais rápida, MAS, está mais lenta que a versão com dicionário
-# def simular_cache_FIFO(padrao_acesso, cache_lines, associatividade, bloco_tamanho):
-    # num_conjuntos = cache_lines // associatividade
-    # cache = [deque() for _ in range(num_conjuntos)]  # Usando deque
-    # hits = 0
-    # misses = 0
-    # conjunto_log = []
-    # hit_log = []
-
-    # for endereco in padrao_acesso:
-        # bloco = endereco // bloco_tamanho
-        # conjunto = bloco % num_conjuntos
-        # conjunto_atual = cache[conjunto]
-
-        # if bloco in conjunto_atual:
-            # hits += 1
-            # hit_log.append(1)
-        # else:
-            # misses += 1
-            # hit_log.append(0)
-            # if len(conjunto_atual) >= associatividade:
-                # conjunto_atual.popleft()  # Remove o mais antigo (FIFO)
-            # conjunto_atual.append(bloco)  # Adiciona o novo
-
-        # conjunto_log.append(conjunto)
-
-    # return conjunto_log, hit_log
-
-
-
-# LRU
+# ------------------------------------------------------------------------------
+# Simulação de cache com política de substituição LRU (Least Recently Used)
 def simular_cache_LRU(padrao_acesso, cache_lines, associatividade, bloco_tamanho):
     num_conjuntos = cache_lines // associatividade
     cache = [deque() for _ in range(num_conjuntos)]
-    hits = 0
-    misses = 0
-    conjunto_log = []
-    hit_log = []
+    hits, misses = 0, 0
+    conjunto_log, hit_log = [], []
 
     for endereco in padrao_acesso:
         bloco = endereco // bloco_tamanho
@@ -134,27 +107,26 @@ def simular_cache_LRU(padrao_acesso, cache_lines, associatividade, bloco_tamanho
         if bloco in conjunto_atual:
             hits += 1
             hit_log.append(1)
-            conjunto_atual.remove(bloco)
-            conjunto_atual.append(bloco)  # Move para o fim, como mais recentemente usado
+            conjunto_atual.remove(bloco)      # Remove e reinsere no fim (mais recente)
+            conjunto_atual.append(bloco)
         else:
             misses += 1
             hit_log.append(0)
             if len(conjunto_atual) >= associatividade:
-                conjunto_atual.popleft()  # Remove o menos recentemente usado
+                conjunto_atual.popleft()      # Remove o menos recentemente usado
             conjunto_atual.append(bloco)
 
         conjunto_log.append(conjunto)
 
     return conjunto_log, hit_log
 
-
+# ------------------------------------------------------------------------------
+# Simulação de cache com política de substituição LFU (Least Frequently Used)
 def simular_cache_LFU(padrao_acesso, cache_lines, associatividade, bloco_tamanho):
     num_conjuntos = cache_lines // associatividade
-    cache = [{} for _ in range(num_conjuntos)]  # Dicionário: bloco -> contador de uso
-    hits = 0
-    misses = 0
-    conjunto_log = []
-    hit_log = []
+    cache = [{} for _ in range(num_conjuntos)]  # Dict: bloco -> frequência
+    hits, misses = 0, 0
+    conjunto_log, hit_log = [], []
 
     for endereco in padrao_acesso:
         bloco = endereco // bloco_tamanho
@@ -171,7 +143,6 @@ def simular_cache_LFU(padrao_acesso, cache_lines, associatividade, bloco_tamanho
             if len(conjunto_atual) < associatividade:
                 conjunto_atual[bloco] = 1
             else:
-                # Remove o bloco menos frequentemente usado
                 bloco_remover = min(conjunto_atual, key=conjunto_atual.get)
                 del conjunto_atual[bloco_remover]
                 conjunto_atual[bloco] = 1
@@ -180,14 +151,13 @@ def simular_cache_LFU(padrao_acesso, cache_lines, associatividade, bloco_tamanho
 
     return conjunto_log, hit_log
 
-import random
+# ------------------------------------------------------------------------------
+# Simulação de cache com política de substituição aleatória (RANDOM)
 def simular_cache_RANDOM(padrao_acesso, cache_lines, associatividade, bloco_tamanho):
     num_conjuntos = cache_lines // associatividade
     cache = [[] for _ in range(num_conjuntos)]
-    hits = 0
-    misses = 0
-    conjunto_log = []
-    hit_log = []
+    hits, misses = 0, 0
+    conjunto_log, hit_log = [], []
 
     for endereco in padrao_acesso:
         bloco = endereco // bloco_tamanho
@@ -209,15 +179,18 @@ def simular_cache_RANDOM(padrao_acesso, cache_lines, associatividade, bloco_tama
         conjunto_log.append(conjunto)
 
     return conjunto_log, hit_log
-# --------------------------------------------------------------------------------------
-# Variável global para guardar o algoritmo selecionado
+
+# ------------------------------------------------------------------------------
+# Variável global que armazena o algoritmo de substituição selecionado
 algoritmo_escolhido = "FIFO"
+
+# Callback para seleção do algoritmo via GUI
 def selecionar_algoritmo(sender, app_data):
     global algoritmo_escolhido
     algoritmo_escolhido = app_data
-    # dpg.set_value("algoritmo_texto", f"Selecionado: {algoritmo_escolhido}")
 
-# --------------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Geração de mapa de calor (heatmap) dos acessos por bloco ao longo do tempo
 def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_temporal=100):
     num_janelas = len(padrao_acesso) // resolucao_temporal
     num_blocos = memory_size // bloco_tamanho
@@ -233,11 +206,12 @@ def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_te
     plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower')
     plt.colorbar(label="Número de acessos por bloco")
     plt.title("Evolução dos Acessos à Memória por Bloco")
-    mensagem = f"Grupos de {resolucao_temporal} Acessos"
-    plt.xlabel(mensagem)
+    plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
     plt.ylabel("Bloco de Memória")
     plt.show()
-# --------------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Execução de várias simulações (Monte Carlo) para avaliar desempenho do algoritmo escolhido
 def simulacao_monte_carlo(n_simulacoes, acessos, memory_size, cache_lines, associatividade, regioes_quentes, probs, bloco_tamanho):
     taxas_acerto = []
     hits_totais = []
@@ -245,6 +219,8 @@ def simulacao_monte_carlo(n_simulacoes, acessos, memory_size, cache_lines, assoc
 
     for i in range(n_simulacoes):
         padrao = gerar_padrao_realista(acessos, memory_size, regioes_quentes, *probs, bloco_tamanho)
+        
+        # Seleciona e executa o algoritmo de substituição
         if algoritmo_escolhido == 'FIFO':
             conjunto_log, hit_log = simular_cache_FIFO(padrao, cache_lines, associatividade, bloco_tamanho)
         elif algoritmo_escolhido == 'LRU':
@@ -255,20 +231,35 @@ def simulacao_monte_carlo(n_simulacoes, acessos, memory_size, cache_lines, assoc
             conjunto_log, hit_log = simular_cache_RANDOM(padrao, cache_lines, associatividade, bloco_tamanho)
         else:
             raise ValueError(f"Algoritmo de substituição desconhecido: {algoritmo_escolhido}")
-        
+
         hits = sum(hit_log)
         misses = len(hit_log) - hits
         taxa_acerto = hits / len(hit_log)
+        
+        # Armazena resultados desta simulação
         taxas_acerto.append(taxa_acerto)
         hits_totais.append(hits)
         misses_totais.append(misses)
 
+    # Exibe estatísticas gerais
+    print(f"--- Resultados: {acessos} Acessos - Bloco de {bloco_tamanho} ---\n")
+    print(f"Média da Taxa de Acerto: {np.mean(taxas_acerto):.2f}")
+    print(f"Desvio Padrão da Taxa de Acerto: {np.std(taxas_acerto):.2f}")
+    print(f"Máximo: {max(taxas_acerto):.2f}, Mínimo: {min(taxas_acerto):.2f}")
+
+    # Parte do plot do mapa de acessos. COmentada porque NÃO FUNCIONA!!!!!
         # if i == 0:
             # mapa_temporal_blocos(padrao, memory_size, bloco_tamanho, resolucao_temporal=100)
 
     print(f"--- Resultados: {acessos} Acessos - Bloco de {bloco_tamanho} ---\n")
     print(f"Média da Taxa de Acerto: {np.mean(taxas_acerto):.4f}")
     print(f"Desvio padrão da Taxa de Acerto: {np.std(taxas_acerto):.4f}\n")   # print(f"Total médio de acessos: {acessos}")
+    
+    # Parte comentada ANTIGA para debug!!!!!
+# --------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------
     # print(f"Média de Cache Hits: {np.mean(hits_totais):.2f}")
     # print(f"Variância Taxa de Acerto: {np.var(hits_totais):.2f}")
     # print(f"Média Taxa de Erro: {np.mean(misses_totais):.2f}")
@@ -533,4 +524,3 @@ dpg.maximize_viewport()
 dpg.show_viewport()
 dpg.start_dearpygui()
 dpg.destroy_context()
-
