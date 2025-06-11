@@ -144,4 +144,4 @@ Este simulador pode ser utilizado em disciplinas como:
 * Sistemas Embarcados
 * Simulação de Sistemas
 
-É uma ferramenta prática para entender conceitos fundamentais de caches, localidade de acesso e impacto das políticas de substituição na performance.
+É uma ferramenta simples que pode ser usada para entender conceitos fundamentais de caches, localidade de acesso e impacto das políticas de substituição no desempenho.
