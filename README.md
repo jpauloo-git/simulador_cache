@@ -23,7 +23,7 @@ Este simulador tem como objetivo didático auxiliar no estudo do comportamento d
   * **LRU** (Least Recently Used)
   * **LFU** (Least Frequently Used)
   * **Random**
-* Geração de **mapa de calor (heatmap)** para visualização da frequência de acesso por bloco de memória ao longo do tempo.
+* Geração de **mapa de calor (heatmap)** para visualização da frequência de acesso por bloco de memória ao longo do tempo (desabilitado por erro no código).
 * Execução de **simulações Monte Carlo** para análise estatística da taxa de acerto.
 * Exibição dos resultados diretamente na interface, incluindo média e desvio padrão da taxa de acerto.
 
@@ -45,7 +45,7 @@ O simulador permite a configuração dos seguintes parâmetros:
 * Política de substituição (FIFO, LRU, LFU, Random)
 * Número de simulações (para Monte Carlo)
 
-## 4. Geração do Padrão de Acesso (desabilitado por erro no código)
+## 4. Geração do Padrão de Acesso
 
 Os endereços são gerados com base em um modelo probabilístico que busca simular o comportamento real de programas:
 
