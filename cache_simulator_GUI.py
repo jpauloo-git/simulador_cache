@@ -10,9 +10,11 @@ import csv                             # Para leitura/escrita de arquivos CSV
 import dearpygui.dearpygui as dpg     # Biblioteca GUI para interface gráfica
 import time, sys, os                   # Utilitários do sistema e tempo
 from datetime import datetime          # Para manipulação de datas e horários
-
+from screeninfo import get_monitors
+from tools.getScreenInfo import get_principal_monitor
 # ------------------------------------------------------------------------------
 # Redirecionador de saída padrão (print) para uma tag do DearPyGUI
+
 class DPGRedirector:
     def __init__(self, tag):
         self.tag = tag
@@ -468,15 +470,28 @@ def atualizar_plot():
     dpg.fit_axis_data("y_axis")
 
 
+monitor_info = get_principal_monitor()
 # Interface
+
+
+
 dpg.create_context()
 sys.stdout = DPGRedirector("Resumo")  # Redireciona todos os prints
 
 # Pega a resolução da tela
 # viewport_width, viewport_height = dpg.get_viewport_client_width(), dpg.get_viewport_client_height()
+dpg.create_viewport(title='Simulação de Cache',
+                    resizable=True,
+                    width=monitor_info[0],
+                    height=monitor_info[1]
+                    )
 
 
-with dpg.window(label="Simulação de Cache", width=1400, height=900):
+
+
+
+
+with dpg.window(label="Simulação de Cache", width=monitor_info[0], height=monitor_info[1]):
     dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size", width=200)
     dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos", width=200)
     dpg.add_input_int(label="Tamanho Cache (Bytes)", default_value=8192, tag="tamanho_cache", width=200)
@@ -518,7 +533,7 @@ with dpg.window(label="Simulação de Cache", width=1400, height=900):
         dpg.add_input_text(label="<-- Resumo da Simulação", multiline=True, readonly=True, height=380, width=360, default_value="", tag="Resumo")
 
 
-dpg.create_viewport(title='Simulação de Cache', width=800, height=600)
+
 dpg.setup_dearpygui()
 dpg.maximize_viewport()
 dpg.show_viewport()
