@@ -12,6 +12,7 @@ import time, sys, os                   # Utilitários do sistema e tempo
 from datetime import datetime          # Para manipulação de datas e horários
 from screeninfo import get_monitors
 from tools.getScreenInfo import get_principal_monitor
+from tools.getScreenInfo import criar_markdown_com_imagens_da_pasta, create_dir
 # ------------------------------------------------------------------------------
 # Redirecionador de saída padrão (print) para uma tag do DearPyGUI
 
@@ -216,7 +217,7 @@ def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_te
     plt.title("Evolução dos Acessos à Memória por Bloco")
     plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
     plt.ylabel("Bloco de Memória")
-    plt.show()
+    plt.savefig(f"heatmaps/heatmap_{bloco_tamanho}.png")
     
 
 # ------------------------------------------------------------------------------
@@ -308,13 +309,15 @@ resultados = []
 
 
 def rodar_simulacao_callback():
+    create_dir()
     start_time = time.time()
     print(f"            ---   Algoritmo: {algoritmo_escolhido} ---\n")
     global resultados
     dpg.set_value("mensagem_erro", "")  # Limpa mensagem antiga
-
+    
     try:
         # Leitura dos valores
+        descricao_imagens = []
         memory_size = dpg.get_value("memory_size")
         acessos = dpg.get_value("acessos")
         tamanho_cache_bytes = dpg.get_value("tamanho_cache")
@@ -379,6 +382,7 @@ def rodar_simulacao_callback():
                 (prob_temporal, prob_espacial, prob_quente),
                 bt
             )
+            descricao_imagens.append({"num_blocos": bt})
             dpg.set_value("barra", progresso)
             dpg.set_value("texto", f"{int(progresso*100)}% concluído")
             resultados.append((bt, taxas_acerto))
@@ -412,7 +416,15 @@ def rodar_simulacao_callback():
                 f.write("\nTamanho_Bloco,Taxa_Acerto\n")
                 for bloco, taxa in resultados:
                     f.write(f"{bloco},{taxa:.6f}\n")
-    
+
+        
+        criar_markdown_com_imagens_da_pasta(
+            nome_arquivo="Simulacao_Heatmap.md",
+            titulo="Simulação de Cache - HEATMAP",
+            descricao=f"Simulação de Cache - HEATMAP \n - Algoritmo = {algoritmo_escolhido}\n- Associatividade = {associatividade}\n- Acessos = {acessos}\n- Cache = {tamanho_cache_bytes}\n- P_tem = {prob_temporal}\n- P_espa = {prob_espacial}\n- P_reg_quente = {prob_quente}\n",
+            descricao_imagens= descricao_imagens,
+            autor="Pedro Henrique Bezerra de mello"
+        )
     except Exception as e:
         dpg.set_value("mensagem_erro", f"Erro inesperado: {str(e)}")
     # Mede tempo de simulação:
