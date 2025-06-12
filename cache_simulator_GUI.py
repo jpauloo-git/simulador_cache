@@ -194,6 +194,8 @@ def selecionar_algoritmo(sender, app_data):
 # ------------------------------------------------------------------------------
 # Geração de mapa de calor (heatmap) dos acessos por bloco ao longo do tempo
 def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_temporal=100):
+    
+    
     num_janelas = len(padrao_acesso) // resolucao_temporal
     num_blocos = memory_size // bloco_tamanho
     heatmap = np.zeros((num_blocos, num_janelas), dtype=int)
@@ -204,6 +206,10 @@ def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_te
         if bloco < num_blocos and tempo < num_janelas:
             heatmap[bloco][tempo] += 1
 
+    print(len(heatmap))
+    print(heatmap)
+    
+    print('entramos na function')
     plt.figure(figsize=(10, 4))
     plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower')
     plt.colorbar(label="Número de acessos por bloco")
@@ -211,6 +217,7 @@ def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_te
     plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
     plt.ylabel("Bloco de Memória")
     plt.show()
+    
 
 # ------------------------------------------------------------------------------
 # Execução de várias simulações (Monte Carlo) para avaliar desempenho do algoritmo escolhido
@@ -242,16 +249,20 @@ def simulacao_monte_carlo(n_simulacoes, acessos, memory_size, cache_lines, assoc
         taxas_acerto.append(taxa_acerto)
         hits_totais.append(hits)
         misses_totais.append(misses)
-
+        
+        
+    
     # Exibe estatísticas gerais
     print(f"--- Resultados: {acessos} Acessos - Bloco de {bloco_tamanho} ---\n")
     print(f"Média da Taxa de Acerto: {np.mean(taxas_acerto):.2f}")
     print(f"Desvio Padrão da Taxa de Acerto: {np.std(taxas_acerto):.2f}")
     print(f"Máximo: {max(taxas_acerto):.2f}, Mínimo: {min(taxas_acerto):.2f}")
 
-    # Parte do plot do mapa de acessos. COmentada porque NÃO FUNCIONA!!!!!
-        # if i == 0:
-            # mapa_temporal_blocos(padrao, memory_size, bloco_tamanho, resolucao_temporal=100)
+    
+    print(f'padrao: {padrao}')
+    print(bloco_tamanho)
+    print(memory_size)
+    mapa_temporal_blocos(padrao, memory_size, bloco_tamanho, resolucao_temporal=100)
 
     print(f"--- Resultados: {acessos} Acessos - Bloco de {bloco_tamanho} ---\n")
     print(f"Média da Taxa de Acerto: {np.mean(taxas_acerto):.4f}")
@@ -517,7 +528,10 @@ with dpg.window(label="Simulação de Cache", width=monitor_info[0], height=moni
         dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="<-- Algoritmo de Substituição", width=100, tag="combo_algoritmo",callback=selecionar_algoritmo)
         # Salvar Grafico está com erro!!!
         # dpg.add_button(label="Salvar Simulação", callback=export_callback)
-        dpg.add_button(label="Mostrar Heatmap", callback=mapa_temporal_blocos)
+        dpg.add_button(label="Mostrar Heatmap", callback=mapa_temporal_blocos,
+                       
+                       
+        )
     dpg.add_separator()
     dpg.add_input_text(label="<-- Resultado da Última Simulação", multiline=True, readonly=True, height=35, tag="resultados_box")
 	

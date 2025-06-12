@@ -1,0 +1,10 @@
+- Algoritmo = FIFO
+- Associatividade = 8
+- Acessos = 10000
+- Cache = 8192
+- P_tem = 0.20000000298023224
+- P_espa = 0.20000000298023224
+- P_reg_quente = 0.4000000059604645
+
+Tamanho_Bloco,Taxa_Acerto
+1024,0.543810
