@@ -1,0 +1,18 @@
+- Algoritmo = Random
+- Associatividade = 16
+- Acessos = 10000
+- Cache = 8192
+- P_tem = 0.0
+- P_espa = 0.0
+- P_reg_quente = 0.9990000128746033
+
+Tamanho_Bloco,Taxa_Acerto
+2,0.997260
+4,0.998090
+8,0.998110
+16,0.998040
+32,0.998230
+64,0.998050
+128,0.998110
+256,0.998050
+512,0.997510
