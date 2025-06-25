@@ -1,0 +1,5 @@
+# Ignore the results directory for simulation outputs
+Resultados\ da\ Simulacao/
+.csv
+heatmaps/
+.png

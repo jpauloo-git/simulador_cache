@@ -10,9 +10,12 @@ import csv                             # Para leitura/escrita de arquivos CSV
 import dearpygui.dearpygui as dpg     # Biblioteca GUI para interface gráfica
 import time, sys, os                   # Utilitários do sistema e tempo
 from datetime import datetime          # Para manipulação de datas e horários
-
+from screeninfo import get_monitors
+from tools.getScreenInfo import get_principal_monitor
+from tools.getScreenInfo import criar_markdown_com_imagens_da_pasta, create_dir
 # ------------------------------------------------------------------------------
 # Redirecionador de saída padrão (print) para uma tag do DearPyGUI
+
 class DPGRedirector:
     def __init__(self, tag):
         self.tag = tag
@@ -192,6 +195,8 @@ def selecionar_algoritmo(sender, app_data):
 # ------------------------------------------------------------------------------
 # Geração de mapa de calor (heatmap) dos acessos por bloco ao longo do tempo
 def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_temporal=100):
+    
+    
     num_janelas = len(padrao_acesso) // resolucao_temporal
     num_blocos = memory_size // bloco_tamanho
     heatmap = np.zeros((num_blocos, num_janelas), dtype=int)
@@ -202,13 +207,18 @@ def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_te
         if bloco < num_blocos and tempo < num_janelas:
             heatmap[bloco][tempo] += 1
 
+    print(len(heatmap))
+    print(heatmap)
+    
+    print('entramos na function')
     plt.figure(figsize=(10, 4))
     plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower')
     plt.colorbar(label="Número de acessos por bloco")
     plt.title("Evolução dos Acessos à Memória por Bloco")
     plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
     plt.ylabel("Bloco de Memória")
-    plt.show()
+    plt.savefig(f"heatmaps/heatmap_{bloco_tamanho}.png")
+    
 
 # ------------------------------------------------------------------------------
 # Execução de várias simulações (Monte Carlo) para avaliar desempenho do algoritmo escolhido
@@ -240,16 +250,20 @@ def simulacao_monte_carlo(n_simulacoes, acessos, memory_size, cache_lines, assoc
         taxas_acerto.append(taxa_acerto)
         hits_totais.append(hits)
         misses_totais.append(misses)
-
+        
+        
+    
     # Exibe estatísticas gerais
     print(f"--- Resultados: {acessos} Acessos - Bloco de {bloco_tamanho} ---\n")
     print(f"Média da Taxa de Acerto: {np.mean(taxas_acerto):.2f}")
     print(f"Desvio Padrão da Taxa de Acerto: {np.std(taxas_acerto):.2f}")
     print(f"Máximo: {max(taxas_acerto):.2f}, Mínimo: {min(taxas_acerto):.2f}")
 
-    # Parte do plot do mapa de acessos. COmentada porque NÃO FUNCIONA!!!!!
-        # if i == 0:
-            # mapa_temporal_blocos(padrao, memory_size, bloco_tamanho, resolucao_temporal=100)
+    
+    print(f'padrao: {padrao}')
+    print(bloco_tamanho)
+    print(memory_size)
+    mapa_temporal_blocos(padrao, memory_size, bloco_tamanho, resolucao_temporal=100)
 
     print(f"--- Resultados: {acessos} Acessos - Bloco de {bloco_tamanho} ---\n")
     print(f"Média da Taxa de Acerto: {np.mean(taxas_acerto):.4f}")
@@ -295,13 +309,15 @@ resultados = []
 
 
 def rodar_simulacao_callback():
+    create_dir()
     start_time = time.time()
     print(f"            ---   Algoritmo: {algoritmo_escolhido} ---\n")
     global resultados
     dpg.set_value("mensagem_erro", "")  # Limpa mensagem antiga
-
+    
     try:
         # Leitura dos valores
+        descricao_imagens = []
         memory_size = dpg.get_value("memory_size")
         acessos = dpg.get_value("acessos")
         tamanho_cache_bytes = dpg.get_value("tamanho_cache")
@@ -366,6 +382,7 @@ def rodar_simulacao_callback():
                 (prob_temporal, prob_espacial, prob_quente),
                 bt
             )
+            descricao_imagens.append({"num_blocos": bt})
             dpg.set_value("barra", progresso)
             dpg.set_value("texto", f"{int(progresso*100)}% concluído")
             resultados.append((bt, taxas_acerto))
@@ -399,7 +416,15 @@ def rodar_simulacao_callback():
                 f.write("\nTamanho_Bloco,Taxa_Acerto\n")
                 for bloco, taxa in resultados:
                     f.write(f"{bloco},{taxa:.6f}\n")
-    
+
+        
+        criar_markdown_com_imagens_da_pasta(
+            nome_arquivo="Simulacao_Heatmap.md",
+            titulo="Simulação de Cache - HEATMAP",
+            descricao=f"Simulação de Cache - HEATMAP \n - Algoritmo = {algoritmo_escolhido}\n- Associatividade = {associatividade}\n- Acessos = {acessos}\n- Cache = {tamanho_cache_bytes}\n- P_tem = {prob_temporal}\n- P_espa = {prob_espacial}\n- P_reg_quente = {prob_quente}\n",
+            descricao_imagens= descricao_imagens,
+            autor="Pedro Henrique Bezerra de mello"
+        )
     except Exception as e:
         dpg.set_value("mensagem_erro", f"Erro inesperado: {str(e)}")
     # Mede tempo de simulação:
@@ -468,15 +493,28 @@ def atualizar_plot():
     dpg.fit_axis_data("y_axis")
 
 
+monitor_info = get_principal_monitor()
 # Interface
+
+
+
 dpg.create_context()
 sys.stdout = DPGRedirector("Resumo")  # Redireciona todos os prints
 
 # Pega a resolução da tela
 # viewport_width, viewport_height = dpg.get_viewport_client_width(), dpg.get_viewport_client_height()
+dpg.create_viewport(title='Simulação de Cache',
+                    resizable=True,
+                    width=monitor_info[0],
+                    height=monitor_info[1]
+                    )
 
 
-with dpg.window(label="Simulação de Cache", width=1400, height=900):
+
+
+
+
+with dpg.window(label="Simulação de Cache", width=monitor_info[0], height=monitor_info[1]):
     dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size", width=200)
     dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos", width=200)
     dpg.add_input_int(label="Tamanho Cache (Bytes)", default_value=8192, tag="tamanho_cache", width=200)
@@ -502,7 +540,10 @@ with dpg.window(label="Simulação de Cache", width=1400, height=900):
         dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="<-- Algoritmo de Substituição", width=100, tag="combo_algoritmo",callback=selecionar_algoritmo)
         # Salvar Grafico está com erro!!!
         # dpg.add_button(label="Salvar Simulação", callback=export_callback)
-        dpg.add_button(label="Mostrar Heatmap", callback=mapa_temporal_blocos)
+        dpg.add_button(label="Mostrar Heatmap", callback=mapa_temporal_blocos,
+                       
+                       
+        )
     dpg.add_separator()
     dpg.add_input_text(label="<-- Resultado da Última Simulação", multiline=True, readonly=True, height=35, tag="resultados_box")
 	
@@ -518,7 +559,7 @@ with dpg.window(label="Simulação de Cache", width=1400, height=900):
         dpg.add_input_text(label="<-- Resumo da Simulação", multiline=True, readonly=True, height=380, width=360, default_value="", tag="Resumo")
 
 
-dpg.create_viewport(title='Simulação de Cache', width=800, height=600)
+
 dpg.setup_dearpygui()
 dpg.maximize_viewport()
 dpg.show_viewport()
