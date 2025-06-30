@@ -478,24 +478,71 @@ def selecionar_algoritmo(sender, app_data):
 
 # ------------------------------------------------------------------------------
 # Geração de mapa de calor (heatmap) dos acessos por bloco ao longo do tempo
-def mapa_temporal_blocos(padrao_acesso, memory_size, bloco_tamanho, resolucao_temporal=100):
-    num_janelas = len(padrao_acesso) // resolucao_temporal
-    num_blocos = memory_size // bloco_tamanho
-    heatmap = np.zeros((num_blocos, num_janelas), dtype=int)
+def mapa_temporal_blocos():
+    try:
+        # Obter parâmetros da interface
+        memory_size = int(dpg.get_value("memory_size"))
+        blocos = dpg.get_value("blocos")  # String com os tamanhos dos blocos
+        bloco_tamanho = int(blocos.split(",")[0])  # Usar o primeiro tamanho de bloco
+        acessos = int(dpg.get_value("acessos"))
+        prob_temporal = float(dpg.get_value("prob_temporal"))
+        prob_espacial = float(dpg.get_value("prob_espacial"))
+        prob_quente = float(dpg.get_value("prob_quente"))
+        
+        # Lista predefinida de regiões quentes
+        regioes_quentes = [64, 1024, 8192, 32768, 131072, 262144, 524288, 786432, 983040]
+        
+        # Gerar padrão de acesso
+        padrao_acesso = gerar_padrao_realista(acessos, memory_size, regioes_quentes, 
+                                            prob_temporal, prob_espacial, prob_quente, 
+                                            bloco_tamanho)
+        
+        # Criar matriz do heatmap
+        resolucao_temporal = 100
+        num_janelas = len(padrao_acesso) // resolucao_temporal
+        num_blocos = memory_size // bloco_tamanho
+        heatmap = np.zeros((num_blocos, num_janelas), dtype=int)
 
-    for i, endereco in enumerate(padrao_acesso):
-        tempo = i // resolucao_temporal
-        bloco = endereco // bloco_tamanho
-        if bloco < num_blocos and tempo < num_janelas:
-            heatmap[bloco][tempo] += 1
+        for i, endereco in enumerate(padrao_acesso):
+            tempo = i // resolucao_temporal
+            bloco = endereco // bloco_tamanho
+            if bloco < num_blocos and tempo < num_janelas:
+                heatmap[bloco][tempo] += 1
 
-    plt.figure(figsize=(10, 4))
-    plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower')
-    plt.colorbar(label="Número de acessos por bloco")
-    plt.title("Evolução dos Acessos à Memória por Bloco")
-    plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
-    plt.ylabel("Bloco de Memória")
-    plt.show()
+        # Criar e salvar o heatmap
+        plt.figure(figsize=(6, 4))
+        plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower')
+        plt.colorbar(label="Número de acessos por bloco")
+        plt.title(f"Evolução dos Acessos à Memória por Bloco (Tamanho: {bloco_tamanho} bytes)")
+        plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
+        plt.ylabel("Bloco de Memória")
+        plt.tight_layout()  # Ajusta automaticamente o layout
+        
+        # Salvar em um arquivo temporário
+        if not os.path.exists('heatmaps'):
+            os.makedirs('heatmaps')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f'heatmaps/heatmap_{timestamp}.png'
+        plt.savefig(filename, dpi=100, bbox_inches='tight')
+        plt.close()
+
+        # Atualizar o heatmap na interface
+        if dpg.does_item_exist("heatmap_texture"):
+            dpg.delete_item("heatmap_texture")
+        
+        width, height, channels, data = dpg.load_image(filename)
+        with dpg.texture_registry():
+            texture_id = dpg.add_static_texture(width, height, data, tag="heatmap_texture")
+        
+        if dpg.does_item_exist("heatmap_image"):
+            dpg.delete_item("heatmap_image")
+            dpg.delete_item("heatmap_text")
+        
+        dpg.add_image(texture_id, parent="heatmap_group", tag="heatmap_image", width=360, height=300)
+        dpg.add_text(f"Tamanho do Bloco: {bloco_tamanho} bytes", parent="heatmap_group", tag="heatmap_text")
+        
+    except Exception as e:
+        dpg.set_value("mensagem_erro", f"Erro ao gerar heatmap: {str(e)}")
 
 # ------------------------------------------------------------------------------
 # Execução de várias simulações (Monte Carlo) para avaliar desempenho do algoritmo escolhido
@@ -1059,12 +1106,11 @@ with dpg.window(label="Simulação de Cache", width=1400, height=900):
         dpg.add_button(label="Simular", callback=rodar_simulacao_callback)
         dpg.add_button(label="Simular Multinível", callback=rodar_simulacao_multinivel_callback)
         dpg.add_button(label="Limpar Último", callback=limpar_ultimo_plot)
-        dpg.add_button(label="Limpar Plots", callback= limpar_plots)
+        dpg.add_button(label="Limpar Plots", callback=limpar_plots)
+        dpg.add_button(label="Gerar Heatmap", callback=mapa_temporal_blocos)
         dpg.add_progress_bar(tag="barra", default_value=0.0, width=300)
         dpg.add_text("0% concluído", tag="texto")
         dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="<-- Algoritmo de Substituição", width=100, tag="combo_algoritmo",callback=selecionar_algoritmo)
-        # Botões adicionais comentados
-        # dpg.add_button(label="Mostrar Heatmap", callback=mapa_temporal_blocos)
     dpg.add_separator()
     dpg.add_input_text(label="<-- Resultado da Última Simulação", multiline=True, readonly=True, height=35, tag="resultados_box")
     
@@ -1078,11 +1124,15 @@ with dpg.window(label="Simulação de Cache", width=1400, height=900):
             x_axis = dpg.add_plot_axis(dpg.mvXAxis, label="Tamanho do Bloco", tag="x_axis")
             y_axis = dpg.add_plot_axis(dpg.mvYAxis, label="Taxa de Acerto", tag="y_axis")
         dpg.add_input_text(label="<-- Resumo da Simulação", multiline=True, readonly=True, height=380, width=360, default_value="", tag="Resumo")
-
-
-dpg.create_viewport(title='Simulação de Cache', width=800, height=600)
-dpg.setup_dearpygui()
-dpg.maximize_viewport()
-dpg.show_viewport()
-dpg.start_dearpygui()
-dpg.destroy_context()
+        
+        # Área para o heatmap
+        with dpg.group(tag="heatmap_group"):
+            dpg.add_text("Mapa de Calor dos Acessos à Memória")
+            # O heatmap será adicionado aqui dinamicamente
+            
+    dpg.create_viewport(title='Simulação de Cache', width=1400, height=900)
+    dpg.setup_dearpygui()
+    dpg.maximize_viewport()
+    dpg.show_viewport()
+    dpg.start_dearpygui()
+    dpg.destroy_context()
