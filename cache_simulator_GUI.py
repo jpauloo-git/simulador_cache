@@ -783,6 +783,53 @@ def rodar_simulacao_multinivel_callback():
         if not is_power_of_two(bloco_tamanho) or bloco_tamanho <= 0 or bloco_tamanho >= memory_size:
             dpg.set_value("mensagem_erro", f"Erro: Tamanho do Bloco deve ser potência de 2 e menor que Memory Size. Valor: {bloco_tamanho}")
             return
+
+        # Verificações adicionais para cache multinível
+        # Verifica se os tamanhos das caches são potências de 2 e menores que a memória principal
+        tamanho_cache_l1 = niveis_config[0][0] * bloco_tamanho
+        if not is_power_of_two(tamanho_cache_l1) or tamanho_cache_l1 >= memory_size:
+            dpg.set_value("mensagem_erro", "Erro: Tamanho da Cache L1 deve ser potência de 2 e menor que Memory Size.")
+            return
+
+        if usar_l2:
+            tamanho_cache_l2 = niveis_config[1][0] * bloco_tamanho
+            if not is_power_of_two(tamanho_cache_l2) or tamanho_cache_l2 >= memory_size:
+                dpg.set_value("mensagem_erro", "Erro: Tamanho da Cache L2 deve ser potência de 2 e menor que Memory Size.")
+                return
+            if tamanho_cache_l2 <= tamanho_cache_l1:
+                dpg.set_value("mensagem_erro", "Erro: Tamanho da Cache L2 deve ser maior que L1.")
+                return
+
+        if usar_l3:
+            if not usar_l2:
+                dpg.set_value("mensagem_erro", "Erro: Não é possível usar L3 sem L2.")
+                return
+            tamanho_cache_l3 = niveis_config[2][0] * bloco_tamanho
+            if not is_power_of_two(tamanho_cache_l3) or tamanho_cache_l3 >= memory_size:
+                dpg.set_value("mensagem_erro", "Erro: Tamanho da Cache L3 deve ser potência de 2 e menor que Memory Size.")
+                return
+            if tamanho_cache_l3 <= tamanho_cache_l2:
+                dpg.set_value("mensagem_erro", "Erro: Tamanho da Cache L3 deve ser maior que L2.")
+                return
+
+        # Verifica se os tempos de acesso seguem a hierarquia
+        if tempo_l1 <= 0:
+            dpg.set_value("mensagem_erro", "Erro: Tempo de acesso L1 deve ser positivo.")
+            return
+
+        if usar_l2:
+            if tempo_l2 <= tempo_l1:
+                dpg.set_value("mensagem_erro", "Erro: Tempo de acesso L2 deve ser maior que L1.")
+                return
+
+        if usar_l3:
+            if tempo_l3 <= tempo_l2:
+                dpg.set_value("mensagem_erro", "Erro: Tempo de acesso L3 deve ser maior que L2.")
+                return
+
+        if tempo_ram <= (tempo_l3 if usar_l3 else (tempo_l2 if usar_l2 else tempo_l1)):
+            dpg.set_value("mensagem_erro", "Erro: Tempo de acesso RAM deve ser maior que o último nível de cache.")
+            return
         # --- FIM VERIFICAÇÕES ---
 
         resultados.clear()
