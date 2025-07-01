@@ -499,19 +499,22 @@ def mapa_temporal_blocos():
         
         # Criar matriz do heatmap
         resolucao_temporal = 100
-        num_janelas = len(padrao_acesso) // resolucao_temporal
-        num_blocos = memory_size // bloco_tamanho
-        heatmap = np.zeros((num_blocos, num_janelas), dtype=int)
+        num_janelas = max(1, len(padrao_acesso) // resolucao_temporal)
+        resolucao_blocos = 256
+        num_blocos = max(1, memory_size // bloco_tamanho)
+        num_blocos_agrupados = max(1, num_blocos // resolucao_blocos)
+        heatmap = np.zeros((num_blocos_agrupados, num_janelas), dtype=int)
 
         for i, endereco in enumerate(padrao_acesso):
             tempo = i // resolucao_temporal
             bloco = endereco // bloco_tamanho
-            if bloco < num_blocos and tempo < num_janelas:
-                heatmap[bloco][tempo] += 1
+            bloco_agrupado = min(bloco // resolucao_blocos, num_blocos_agrupados - 1)
+            tempo = min(tempo, num_janelas - 1)
+            heatmap[bloco_agrupado][tempo] += 1
 
         # Criar e salvar o heatmap
         plt.figure(figsize=(6, 4))
-        plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower')
+        plt.imshow(heatmap, cmap='hot', aspect='auto', origin='lower', interpolation='nearest', vmin=0, vmax=np.max(heatmap) // 5 + 1)
         plt.colorbar(label="Número de acessos por bloco")
         plt.title(f"Evolução dos Acessos à Memória por Bloco (Tamanho: {bloco_tamanho} bytes)")
         plt.xlabel(f"Grupos de {resolucao_temporal} Acessos")
@@ -519,10 +522,10 @@ def mapa_temporal_blocos():
         plt.tight_layout()  # Ajusta automaticamente o layout
         
         # Salvar em um arquivo temporário
-        if not os.path.exists('heatmaps'):
-            os.makedirs('heatmaps')
+        if not os.path.exists('Heatmaps'):
+            os.makedirs('Heatmaps')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f'heatmaps/heatmap_{timestamp}.png'
+        filename = f'Heatmaps/heatmap_{timestamp}.png'
         plt.savefig(filename, dpi=100, bbox_inches='tight')
         plt.close()
 
@@ -538,7 +541,7 @@ def mapa_temporal_blocos():
             dpg.delete_item("heatmap_image")
             dpg.delete_item("heatmap_text")
         
-        dpg.add_image(texture_id, parent="heatmap_group", tag="heatmap_image", width=360, height=300)
+        dpg.add_image(texture_id, parent="heatmap_group", tag="heatmap_image", width=540, height=450)
         dpg.add_text(f"Tamanho do Bloco: {bloco_tamanho} bytes", parent="heatmap_group", tag="heatmap_text")
         
     except Exception as e:
@@ -1035,6 +1038,18 @@ def atualizar_plot():
     dpg.fit_axis_data("y_axis")
 
 
+
+# -------------------------------------------------------------------------------
+# Remove o heatmap atual da interface
+def limpar_heatmap():
+    if dpg.does_item_exist("heatmap_texture"):
+        dpg.delete_item("heatmap_texture")
+    if dpg.does_item_exist("heatmap_image"):
+        dpg.delete_item("heatmap_image")
+    if dpg.does_item_exist("heatmap_text"):
+        dpg.delete_item("heatmap_text")
+
+
 # Interface
 dpg.create_context()
 sys.stdout = DPGRedirector("Resumo")  # Redireciona todos os prints
@@ -1108,6 +1123,7 @@ with dpg.window(label="Simulação de Cache", width=1400, height=900):
         dpg.add_button(label="Limpar Último", callback=limpar_ultimo_plot)
         dpg.add_button(label="Limpar Plots", callback=limpar_plots)
         dpg.add_button(label="Gerar Heatmap", callback=mapa_temporal_blocos)
+        dpg.add_button(label="Limpar Heatmap", callback=limpar_heatmap)
         dpg.add_progress_bar(tag="barra", default_value=0.0, width=300)
         dpg.add_text("0% concluído", tag="texto")
         dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="<-- Algoritmo de Substituição", width=100, tag="combo_algoritmo",callback=selecionar_algoritmo)
