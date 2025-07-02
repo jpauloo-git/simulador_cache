@@ -10,6 +10,7 @@ import csv                             # Para leitura/escrita de arquivos CSV
 import dearpygui.dearpygui as dpg     # Biblioteca GUI para interface gráfica
 import time, sys, os                   # Utilitários do sistema e tempo
 from datetime import datetime          # Para manipulação de datas e horários
+import math                            # Biblioteca matemática para funções diversas
 
 # ------------------------------------------------------------------------------
 # Redirecionador de saída padrão (print) para uma tag do DearPyGUI
@@ -19,9 +20,15 @@ class DPGRedirector:
         self.buffer = ""
 
     def write(self, text):
-        self.buffer += text
-        current_text = dpg.get_value(self.tag)
-        dpg.set_value(self.tag, current_text + text)
+        try:
+            self.buffer += text
+            current_text = dpg.get_value(self.tag)
+            if current_text is None:
+                current_text = ""
+            dpg.set_value(self.tag, current_text + text)
+        except Exception as e:
+            # Fallback para stdout padrão se houver erro
+            print(text, end='')
 
     def flush(self):
         pass  # Método necessário para compatibilidade com sys.stdout
@@ -84,7 +91,7 @@ def simular_cache_FIFO(padrao_acesso, cache_lines, associatividade, bloco_tamanh
             if len(conjunto_atual) < associatividade:
                 conjunto_atual.append(bloco)
             else:
-                conjunto_atual.pop(0)  # Remove o mais antigo
+                conjunto_atual.pop(0)  # Removes o mais antigo
                 conjunto_atual.append(bloco)
 
         conjunto_log.append(conjunto)
@@ -184,7 +191,7 @@ def simular_cache_RANDOM(padrao_acesso, cache_lines, associatividade, bloco_tama
 # Simulação de cache multinível com diversas políticas de substituição
 def simular_cache_multinivel(padrao_acesso, niveis_config, algoritmos):
     """
-    Simula um sistema de cache multinível e retorna estatísticas de acesso.
+    Simula um sistema de cache multinível corrigido para evitar Segmentation Fault
     
     Parâmetros:
     - padrao_acesso: Lista de endereços de memória acessados
@@ -198,182 +205,138 @@ def simular_cache_multinivel(padrao_acesso, niveis_config, algoritmos):
     """
     n_niveis = len(niveis_config)
     
-    # Verificação de consistência
     if len(algoritmos) != n_niveis:
         raise ValueError("O número de algoritmos deve ser igual ao número de níveis de cache")
     
-    # Inicializa contadores e logs para cada nível
+    # Inicializa contadores
     hits_por_nivel = [0] * n_niveis
     misses_por_nivel = [0] * n_niveis
-    hit_logs = [[] for _ in range(n_niveis)]
     
-    # Cache de cada nível
+    # Inicializa estruturas de cache adequadas para cada algoritmo
     caches = []
     for i in range(n_niveis):
         cache_lines, associatividade, bloco_tamanho = niveis_config[i]
         num_conjuntos = cache_lines // associatividade
         
         if algoritmos[i] == 'LFU':
-            # Para LFU, usamos dicionários para contar frequência
             cache = [{} for _ in range(num_conjuntos)]
         elif algoritmos[i] == 'LRU':
-            # Para LRU, usamos deques para manter ordem de uso
             cache = [deque() for _ in range(num_conjuntos)]
-        else:
-            # Para FIFO e Random, usamos listas simples
+        else:  # FIFO ou Random
             cache = [[] for _ in range(num_conjuntos)]
         
-        caches.append((cache, num_conjuntos, associatividade, bloco_tamanho))
-    
-    # Simulação de acesso multinível
+        caches.append((cache, num_conjuntos, associatividade, bloco_tamanho, algoritmos[i]))
     total_acessos_ram = 0
-    
     for endereco in padrao_acesso:
-        # Tenta acessar cada nível de cache em sequência
-        acesso_encontrado = False
+        dados_encontrados = False
         
+        # Processa cada nível sequencialmente
         for nivel in range(n_niveis):
-            cache, num_conjuntos, associatividade, bloco_tamanho = caches[nivel]
-            algoritmo = algoritmos[nivel]
+            cache, num_conjuntos, associatividade, bloco_tamanho, algoritmo = caches[nivel]
             
             bloco = endereco // bloco_tamanho
             conjunto = bloco % num_conjuntos
+            conjunto_atual = cache[conjunto]
             
+            # Verifica se o bloco está no cache atual
             if algoritmo == 'LFU':
-                conjunto_atual = cache[conjunto]
-                if bloco in conjunto_atual:  # HIT
+                if bloco in conjunto_atual:
+                    # HIT
                     conjunto_atual[bloco] += 1
                     hits_por_nivel[nivel] += 1
-                    hit_logs[nivel].append(1)
-                    acesso_encontrado = True
+                    dados_encontrados = True
                     break
-                else:  # MISS - continua para o próximo nível
+                else:
+                    # MISS
                     misses_por_nivel[nivel] += 1
-                    hit_logs[nivel].append(0)
-                    
-                    # Se último nível, carrega da RAM
-                    if nivel == n_niveis - 1:
-                        total_acessos_ram += 1
-                        # Atualiza todos os níveis com este bloco
-                        for n in range(nivel, -1, -1):
-                            c, nc, assoc, bt = caches[n]
-                            conj = bloco % nc
-                            conj_atual = c[conj]
-                            
-                            if len(conj_atual) < assoc:
-                                if algoritmos[n] == 'LFU':
-                                    conj_atual[bloco] = 1
-                                else:
-                                    conj_atual.append(bloco)
-                            else:
-                                if algoritmos[n] == 'LFU':
-                                    bloco_remover = min(conj_atual, key=conj_atual.get)
-                                    del conj_atual[bloco_remover]
-                                    conj_atual[bloco] = 1
-                                elif algoritmos[n] == 'LRU':
-                                    conj_atual.popleft()
-                                    conj_atual.append(bloco)
-                                elif algoritmos[n] == 'FIFO':
-                                    conj_atual.pop(0)
-                                    conj_atual.append(bloco)
-                                else:  # Random
-                                    idx_remover = random.randint(0, assoc - 1)
-                                    conj_atual[idx_remover] = bloco
             
             elif algoritmo == 'LRU':
-                conjunto_atual = cache[conjunto]
-                if bloco in conjunto_atual:  # HIT
+                if bloco in conjunto_atual:
+                    # HIT
                     conjunto_atual.remove(bloco)
                     conjunto_atual.append(bloco)
                     hits_por_nivel[nivel] += 1
-                    hit_logs[nivel].append(1)
-                    acesso_encontrado = True
+                    dados_encontrados = True
                     break
-                else:  # MISS - continua para o próximo nível
+                else:
+                    # MISS
                     misses_por_nivel[nivel] += 1
-                    hit_logs[nivel].append(0)
-                    
-                    # Se último nível, carrega da RAM
-                    if nivel == n_niveis - 1:
-                        total_acessos_ram += 1
-                        # Atualiza todos os níveis com este bloco
-                        for n in range(nivel, -1, -1):
-                            c, nc, assoc, bt = caches[n]
-                            conj = bloco % nc
-                            conj_atual = c[conj]
-                            
-                            if len(conj_atual) < assoc:
-                                conj_atual.append(bloco)
-                            else:
-                                if algoritmos[n] == 'LFU':
-                                    bloco_remover = min(conj_atual, key=conj_atual.get)
-                                    del conj_atual[bloco_remover]
-                                    conj_atual[bloco] = 1
-                                elif algoritmos[n] == 'LRU':
-                                    conj_atual.popleft()
-                                    conj_atual.append(bloco)
-                                elif algoritmos[n] == 'FIFO':
-                                    conj_atual.pop(0)
-                                    conj_atual.append(bloco)
-                                else:  # Random
-                                    idx_remover = random.randint(0, assoc - 1)
-                                    conj_atual[idx_remover] = bloco
-                    
+            
             else:  # FIFO ou Random
-                conjunto_atual = cache[conjunto]
-                if bloco in conjunto_atual:  # HIT
+                if bloco in conjunto_atual:
+                    # HIT
                     hits_por_nivel[nivel] += 1
-                    hit_logs[nivel].append(1)
-                    acesso_encontrado = True
+                    dados_encontrados = True
                     break
-                else:  # MISS - continua para o próximo nível
+                else:
+                    # MISS
                     misses_por_nivel[nivel] += 1
-                    hit_logs[nivel].append(0)
-                    
-                    # Se último nível, carrega da RAM
-                    if nivel == n_niveis - 1:
-                        total_acessos_ram += 1
-                        # Atualiza todos os níveis com este bloco
-                        for n in range(nivel, -1, -1):
-                            c, nc, assoc, bt = caches[n]
-                            conj = bloco % nc
-                            conj_atual = c[conj]
-                            
-                            if len(conj_atual) < assoc:
-                                conj_atual.append(bloco)
-                            else:
-                                if algoritmos[n] == 'LFU':
-                                    bloco_remover = min(conj_atual, key=conj_atual.get)
-                                    del conj_atual[bloco_remover]
-                                    conj_atual[bloco] = 1
-                                elif algoritmos[n] == 'LRU':
-                                    conj_atual.popleft()
-                                    conj_atual.append(bloco)
-                                elif algoritmos[n] == 'FIFO':
-                                    conj_atual.pop(0)
-                                    conj_atual.append(bloco)
-                                else:  # Random
-                                    idx_remover = random.randint(0, assoc - 1)
-                                    conj_atual[idx_remover] = bloco
+        
+        # Se não encontrou em nenhum nível, acessa a RAM
+        if not dados_encontrados:
+            total_acessos_ram += 1
+        
+        # Carrega o bloco em todos os níveis (do RAM para cima)
+        if not dados_encontrados:
+            for nivel in range(n_niveis):
+                cache, num_conjuntos, associatividade, bloco_tamanho, algoritmo = caches[nivel]
+                bloco = endereco // bloco_tamanho
+                conjunto = bloco % num_conjuntos
+                conjunto_atual = cache[conjunto]
+                
+                # Insere o bloco no cache usando a política apropriada
+                if algoritmo == 'LFU':
+                    if len(conjunto_atual) < associatividade:
+                        conjunto_atual[bloco] = 1
+                    else:
+                        # Remove o menos frequente
+                        bloco_remover = min(conjunto_atual, key=conjunto_atual.get)
+                        del conjunto_atual[bloco_remover]
+                        conjunto_atual[bloco] = 1
+                
+                elif algoritmo == 'LRU':
+                    if len(conjunto_atual) < associatividade:
+                        conjunto_atual.append(bloco)
+                    else:
+                        # Remove o menos recente
+                        conjunto_atual.popleft()
+                        conjunto_atual.append(bloco)
+                
+                elif algoritmo == 'FIFO':
+                    if len(conjunto_atual) < associatividade:
+                        conjunto_atual.append(bloco)
+                    else:
+                        # Remove o primeiro (mais antigo)
+                        conjunto_atual.pop(0)
+                        conjunto_atual.append(bloco)
+                
+                else:  # Random
+                    if len(conjunto_atual) < associatividade:
+                        conjunto_atual.append(bloco)
+                    else:
+                        # Remove aleatório
+                        idx_remover = random.randint(0, associatividade - 1)
+                        conjunto_atual[idx_remover] = bloco
     
-    # Calcula as taxas de acerto para cada nível
+    # Calcula taxas de acerto
     total_acessos = len(padrao_acesso)
     hit_rates = []
     
-    # Calcula taxa de acerto do primeiro nível (L1)
-    hit_rate_l1 = hits_por_nivel[0] / total_acessos if total_acessos > 0 else 0
-    hit_rates.append(hit_rate_l1)
+    if total_acessos > 0:
+        # L1: todos os acessos passam por ele
+        hit_rates.append(hits_por_nivel[0] / total_acessos)
+        
+        # L2, L3: apenas os misses do nível anterior
+        for i in range(1, n_niveis):
+            acessos_nivel = misses_por_nivel[i-1]
+            if acessos_nivel > 0:
+                hit_rates.append(hits_por_nivel[i] / acessos_nivel)
+            else:
+                hit_rates.append(0.0)
+    else:
+        hit_rates = [0.0] * n_niveis
     
-    # Para os outros níveis, a taxa é calculada em relação aos misses do nível anterior
-    for i in range(1, n_niveis):
-        acessos_nivel = misses_por_nivel[i-1]
-        if acessos_nivel > 0:
-            hit_rate = hits_por_nivel[i] / acessos_nivel
-        else:
-            hit_rate = 0
-        hit_rates.append(hit_rate)
-    
-    return hit_rates, hit_logs, total_acessos_ram
+    return hit_rates, [], total_acessos_ram
 
 # ------------------------------------------------------------------------------
 # Calcula o tempo médio de acesso para um sistema de cache multinível
@@ -751,9 +714,28 @@ def rodar_simulacao_multinivel_callback():
     start_time = time.time()
     global resultados
     
-    dpg.set_value("mensagem_erro", "")  # Limpa mensagem antiga
-
+    dpg.set_value("mensagem_erro", "")
+    
     try:
+        # Verificações de segurança antes de começar
+        if not dpg.does_item_exist("y_axis"):
+            dpg.set_value("mensagem_erro", "Erro: Interface não está pronta.")
+            return
+        
+        # Verifica se todos os valores são válidos
+        valores_obrigatorios = [
+            ("memory_size_multi", "Memory Size"),
+            ("acessos_multi", "Acessos"),
+            ("n_simulacoes_multi", "N Simulações"),
+            ("bloco_multi", "Tamanho do Bloco")
+        ]
+        
+        for tag, nome in valores_obrigatorios:
+            valor = dpg.get_value(tag)
+            if valor is None or valor <= 0:
+                dpg.set_value("mensagem_erro", f"Erro: {nome} deve ser um valor positivo.")
+                return
+        
         # Leitura dos valores da interface
         memory_size = dpg.get_value("memory_size_multi")
         acessos = dpg.get_value("acessos_multi")
@@ -907,6 +889,9 @@ def rodar_simulacao_multinivel_callback():
         dpg.set_value("barra", 1.0)
         dpg.set_value("texto", "100% concluído")
         
+        # Adiciona verificação de interrupção durante a simulação
+        dpg.split_frame()  # Permite cancelamento durante execução longa
+        
         # Formata e exibe os resultados
         tipos_cache = []
         for i, algoritmo in enumerate(algoritmos):
@@ -962,10 +947,9 @@ def rodar_simulacao_multinivel_callback():
             f.write(f"Tempo_Medio,{tempo_medio:.2f}\n")
         
     except Exception as e:
-        import traceback
-        traceback_str = traceback.format_exc()
         dpg.set_value("mensagem_erro", f"Erro inesperado: {str(e)}")
-        print(f"Erro detalhado: {traceback_str}")
+        import traceback
+        traceback.print_exc()
     
     # Mede tempo de simulação
     end_time = time.time()
@@ -973,182 +957,302 @@ def rodar_simulacao_multinivel_callback():
     print(f"Tempo de execução: {elapsed_time:.2f} segundos\n")
     print("          ------------++-------------     \n")
 
+# Função de limpeza para evitar Segmentation Fault ao fechar
+def cleanup_on_exit():
+    """Limpa recursos antes de fechar a aplicação"""
+    global plot_series_tags
+    
+    try:
+        # Limpa todos os plots
+        for tag in plot_series_tags:
+            if dpg.does_item_exist(tag):
+                dpg.delete_item(tag)
+        
+        plot_series_tags.clear()
+        
+        # Limpa texturas se existirem
+        if dpg.does_item_exist("heatmap_texture"):
+            dpg.delete_item("heatmap_texture")
+        
+        # Força limpeza do matplotlib
+        plt.close('all')
+        
+        print("Limpeza concluída com sucesso.")
+        
+    except Exception as e:
+        print(f"Erro durante limpeza: {e}")
+
+# Callback para fechar a aplicação de forma segura
+def close_callback():
+    """Callback para fechar a aplicação com limpeza adequada"""
+    try:
+        cleanup_on_exit()
+    except Exception as e:
+        print(f"Erro durante limpeza: {e}")
+    finally:
+        dpg.stop_dearpygui()
+
 # ------------------------------------------------------------------------------
-# Limpa plots e elementos graficos (barra e caixas de texto)
-def limpar_plots():
-    global plot_series_tags
-    plot_series_tags = []
-    dpg.delete_item("y_axis", children_only=True)
-    dpg.set_value("barra", 0.0)
-    dpg.set_value("texto", f"0% concluído")
-    dpg.set_value("Resumo", "\n")
-    dpg.set_value("resultados_box", "\n")
-    dpg.set_value("mensagem_erro", " ")
+# Adicione estas funções antes da criação da interface:
 
-def limpar_ultimo_plot():
-    global plot_series_tags
-    # Limpa dados da simulação na Caixa de tetxto Resumo		        
-    # dpg.set_value("Resumo", "\n")
-    dpg.set_value("mensagem_erro", " ")
-    dpg.set_value("barra", 0.0)
-    dpg.set_value("texto", f"0% concluído")
-    dpg.set_value("resultados_box", "\n")		
-    if plot_series_tags:
-        ultimo_tag = plot_series_tags.pop()
-        dpg.delete_item(ultimo_tag)
-        print(f"Apagado: {ultimo_tag}")
-
-import math
 def atualizar_plot():
+    """Atualiza o gráfico com os resultados da simulação"""
     global plot_series_tags
+    
+    # Verifica se o eixo existe antes de usar
     if not dpg.does_item_exist("y_axis"):
         print("Erro: 'y_axis' não existe.")
         return
 
-    # Se não houver resultados, não faz nada
+    # Verifica se há resultados
     if not resultados:
+        print("Nenhum resultado para plotar.")
         return
     
-    tamanhos, taxas = zip(*resultados)
-
-    # Calcula log2 dos tamanhos
-    tamanhos_log2 = [math.log2(tam) for tam in tamanhos]
-
-    # Verifica consistência
-    if len(tamanhos_log2) != len(taxas):
-        print("Erro: tamanhos_log2 e taxas têm tamanhos diferentes")
-        return
-
-    # Cria uma nova série para o plot
-    plot_series = f"plot_{len(plot_series_tags)}"
-    print(f"\nPlot Atual: {plot_series}\n")
-    plot_series_tags.append(plot_series)
-    
-    dpg.add_line_series(
-        tamanhos_log2,
-        taxas,
-        label=f"{algoritmo_escolhido}",
-        parent="y_axis",
-        tag=plot_series,
-        show=True
-    )
-    
-    # Atualiza os limites dos eixos
-    dpg.fit_axis_data("x_axis")
-    dpg.fit_axis_data("y_axis")
-
-
-
-# -------------------------------------------------------------------------------
-# Remove o heatmap atual da interface
-def limpar_heatmap():
-    if dpg.does_item_exist("heatmap_texture"):
-        dpg.delete_item("heatmap_texture")
-    if dpg.does_item_exist("heatmap_image"):
-        dpg.delete_item("heatmap_image")
-    if dpg.does_item_exist("heatmap_text"):
-        dpg.delete_item("heatmap_text")
-
-
-# Interface
-dpg.create_context()
-sys.stdout = DPGRedirector("Resumo")  # Redireciona todos os prints
-
-# Pega a resolução da tela
-# viewport_width, viewport_height = dpg.get_viewport_client_width(), dpg.get_viewport_client_height()
-
-
-with dpg.window(label="Simulação de Cache", width=1400, height=900):
-    with dpg.tab_bar(tag="tab_bar"):
-        with dpg.tab(label="Cache Única", tag="cache_unica_tab"):
-            dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size", width=200)
-            dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos", width=200)
-            dpg.add_input_int(label="Tamanho Cache (Bytes)", default_value=8192, tag="tamanho_cache", width=200)
-            dpg.add_input_int(label="Associatividade", default_value=16, tag="associatividade", width=200)
-            dpg.add_input_int(label="N Simulações", default_value=10, tag="n_simulacoes", width=200)
-            
-            dpg.add_separator()
-            dpg.add_input_float(label="Probabilidade Temporal", default_value=0.2, tag="prob_temporal", width=200)
-            dpg.add_input_float(label="Probabilidade Espacial", default_value=0.2, tag="prob_espacial", width=200)
-            dpg.add_input_float(label="Probabilidade Região Quente", default_value=0.4, tag="prob_quente", width=200)
-            
-            dpg.add_separator()
-            dpg.add_input_text(label="Tamanhos de Bloco", default_value="2,4,8,16,32,64,128,256,512", tag="blocos", width=400)
-
-        with dpg.tab(label="Cache Multinível", tag="cache_multinivel_tab"):
-            dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size_multi", width=200)
-            dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos_multi", width=200)
-            dpg.add_input_int(label="N Simulações", default_value=10, tag="n_simulacoes_multi", width=200)
-            
-            dpg.add_separator()
-            dpg.add_text("Configuração Cache L1")
-            dpg.add_input_int(label="Tamanho Cache L1 (Bytes)", default_value=8192, tag="tamanho_cache_l1", width=200)
-            dpg.add_input_int(label="Associatividade L1", default_value=16, tag="associatividade_l1", width=200)
-            dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L1", width=200, tag="algoritmo_l1")
-            dpg.add_input_int(label="Tempo Acesso L1 (ns)", default_value=1, tag="tempo_l1", width=200)
-            
-            dpg.add_separator()
-            dpg.add_checkbox(label="Usar Cache L2", default_value=True, tag="usar_l2")
-            dpg.add_text("Configuração Cache L2")
-            dpg.add_input_int(label="Tamanho Cache L2 (Bytes)", default_value=32768, tag="tamanho_cache_l2", width=200)
-            dpg.add_input_int(label="Associatividade L2", default_value=8, tag="associatividade_l2", width=200)
-            dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="Algoritmo L2", width=200, tag="algoritmo_l2")
-            dpg.add_input_int(label="Tempo Acesso L2 (ns)", default_value=5, tag="tempo_l2", width=200)
-            
-            dpg.add_separator()
-            dpg.add_checkbox(label="Usar Cache L3", default_value=False, tag="usar_l3")
-            dpg.add_text("Configuração Cache L3")
-            dpg.add_input_int(label="Tamanho Cache L3 (Bytes)", default_value=262144, tag="tamanho_cache_l3", width=200)
-            dpg.add_input_int(label="Associatividade L3", default_value=16, tag="associatividade_l3", width=200)
-            dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L3", width=200, tag="algoritmo_l3")
-            dpg.add_input_int(label="Tempo Acesso L3 (ns)", default_value=20, tag="tempo_l3", width=200)
-            
-            dpg.add_separator()
-            dpg.add_text("Configuração Memória Principal")
-            dpg.add_input_int(label="Tempo Acesso RAM (ns)", default_value=100, tag="tempo_ram", width=200)
-            
-            dpg.add_separator()
-            dpg.add_input_float(label="Probabilidade Temporal", default_value=0.2, tag="prob_temporal_multi", width=200)
-            dpg.add_input_float(label="Probabilidade Espacial", default_value=0.2, tag="prob_espacial_multi", width=200)
-            dpg.add_input_float(label="Probabilidade Região Quente", default_value=0.4, tag="prob_quente_multi", width=200)
-            
-            dpg.add_separator()
-            dpg.add_input_int(label="Tamanho do Bloco", default_value=64, tag="bloco_multi", width=200)
-
-    dpg.add_separator()
-
-    with dpg.group(horizontal=True):  # Inicia um grupo horizontal
-        dpg.add_button(label="Simular", callback=rodar_simulacao_callback)
-        dpg.add_button(label="Simular Multinível", callback=rodar_simulacao_multinivel_callback)
-        dpg.add_button(label="Limpar Último", callback=limpar_ultimo_plot)
-        dpg.add_button(label="Limpar Plots", callback=limpar_plots)
-        dpg.add_button(label="Gerar Heatmap", callback=mapa_temporal_blocos)
-        dpg.add_button(label="Limpar Heatmap", callback=limpar_heatmap)
-        dpg.add_progress_bar(tag="barra", default_value=0.0, width=300)
-        dpg.add_text("0% concluído", tag="texto")
-        dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="<-- Algoritmo de Substituição", width=100, tag="combo_algoritmo",callback=selecionar_algoritmo)
-    dpg.add_separator()
-    dpg.add_input_text(label="<-- Resultado da Última Simulação", multiline=True, readonly=True, height=35, tag="resultados_box")
-    
-    dpg.add_separator()
-    dpg.add_text("", tag="mensagem_erro")
-    dpg.add_separator()
-
-    with dpg.group(horizontal=True):  # Inicia um grupo horizontal
-        with dpg.plot(label="Taxa de acerto vs Tamanho do Bloco", tag="plot", height=380, width=600):
-            dpg.add_plot_legend()
-            x_axis = dpg.add_plot_axis(dpg.mvXAxis, label="Tamanho do Bloco", tag="x_axis")
-            y_axis = dpg.add_plot_axis(dpg.mvYAxis, label="Taxa de Acerto", tag="y_axis")
-        dpg.add_input_text(label="<-- Resumo da Simulação", multiline=True, readonly=True, height=380, width=360, default_value="", tag="Resumo")
+    try:
+        tamanhos, taxas = zip(*resultados)
         
-        # Área para o heatmap
-        with dpg.group(tag="heatmap_group"):
-            dpg.add_text("Mapa de Calor dos Acessos à Memória")
-            # O heatmap será adicionado aqui dinamicamente
+        # Verifica se os dados são válidos
+        if len(tamanhos) == 0 or len(taxas) == 0:
+            print("Dados vazios para plotar.")
+            return
+        
+        # Calcula log2 dos tamanhos com verificação
+        tamanhos_log2 = []
+        for tam in tamanhos:
+            if tam > 0:
+                tamanhos_log2.append(math.log2(tam))
+            else:
+                print(f"Tamanho inválido: {tam}")
+                return
+        
+        # Verifica consistência
+        if len(tamanhos_log2) != len(taxas):
+            print("Erro: tamanhos_log2 e taxas têm tamanhos diferentes")
+            return
+        
+        # Cria uma nova série para o plot
+        plot_series = f"plot_{len(plot_series_tags)}"
+        plot_series_tags.append(plot_series)
+        
+        dpg.add_line_series(
+            tamanhos_log2,
+            list(taxas),  # Converte para lista para garantir compatibilidade
+            label=f"{algoritmo_escolhido}",
+            parent="y_axis",
+            tag=plot_series,
+            show=True
+        )
+        
+        # Atualiza os limites dos eixos
+        dpg.fit_axis_data("x_axis")
+        dpg.fit_axis_data("y_axis")
+        
+        print(f"Plot adicionado: {plot_series}")
+        
+    except Exception as e:
+        print(f"Erro ao atualizar plot: {e}")
+        import traceback
+        traceback.print_exc()
+
+def limpar_ultimo_plot():
+    """Remove o último plot adicionado"""
+    global plot_series_tags
+    
+    try:
+        dpg.set_value("mensagem_erro", "")
+        dpg.set_value("barra", 0.0)
+        dpg.set_value("texto", "0% concluído")
+        dpg.set_value("resultados_box", "")
+        
+        if plot_series_tags:
+            ultimo_tag = plot_series_tags.pop()
+            # Verifica se o item existe antes de deletar
+            if dpg.does_item_exist(ultimo_tag):
+                dpg.delete_item(ultimo_tag)
+                print(f"Apagado: {ultimo_tag}")
+            else:
+                print(f"Item não existe: {ultimo_tag}")
+        else:
+            print("Nenhum plot para remover.")
             
-    dpg.create_viewport(title='Simulação de Cache', width=1400, height=900)
-    dpg.setup_dearpygui()
-    dpg.maximize_viewport()
-    dpg.show_viewport()
-    dpg.start_dearpygui()
-    dpg.destroy_context()
+    except Exception as e:
+        print(f"Erro ao limpar último plot: {e}")
+
+def limpar_plots():
+    """Remove todos os plots"""
+    global plot_series_tags
+    
+    try:
+        # Limpa todos os plots
+        for tag in plot_series_tags:
+            if dpg.does_item_exist(tag):
+                dpg.delete_item(tag)
+        
+        plot_series_tags.clear()
+        
+        # Limpa apenas os filhos do y_axis, não o próprio eixo
+        if dpg.does_item_exist("y_axis"):
+            dpg.delete_item("y_axis", children_only=True)
+        
+        # Reseta interface
+        dpg.set_value("barra", 0.0)
+        dpg.set_value("texto", "0% concluído")
+        dpg.set_value("Resumo", "")
+        dpg.set_value("resultados_box", "")
+        dpg.set_value("mensagem_erro", "")
+        
+        print("Todos os plots foram limpos.")
+        
+    except Exception as e:
+        print(f"Erro ao limpar plots: {e}")
+
+def limpar_heatmap():
+    """Remove o heatmap atual"""
+    try:
+        if dpg.does_item_exist("heatmap_image"):
+            dpg.delete_item("heatmap_image")
+        if dpg.does_item_exist("heatmap_text"):
+            dpg.delete_item("heatmap_text")
+        if dpg.does_item_exist("heatmap_texture"):
+            dpg.delete_item("heatmap_texture")
+        
+        print("Heatmap removido.")
+        
+    except Exception as e:
+        print(f"Erro ao limpar heatmap: {e}")
+
+# Modifica a parte final do código onde a interface é criada:
+if __name__ == "__main__":
+    try:
+        dpg.create_context()
+        
+        # Criar interface primeiro
+        with dpg.window(label="Simulação de Cache", width=1400, height=900):
+            with dpg.tab_bar(tag="tab_bar"):
+                with dpg.tab(label="Cache Única", tag="cache_unica_tab"):
+                    dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size", width=200)
+                    dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos", width=200)
+                    dpg.add_input_int(label="Tamanho Cache (Bytes)", default_value=8192, tag="tamanho_cache", width=200)
+                    dpg.add_input_int(label="Associatividade", default_value=16, tag="associatividade", width=200)
+                    dpg.add_input_int(label="N Simulações", default_value=10, tag="n_simulacoes", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_input_float(label="Probabilidade Temporal", default_value=0.2, tag="prob_temporal", width=200)
+                    dpg.add_input_float(label="Probabilidade Espacial", default_value=0.2, tag="prob_espacial", width=200)
+                    dpg.add_input_float(label="Probabilidade Região Quente", default_value=0.4, tag="prob_quente", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_input_text(label="Tamanhos de Bloco", default_value="2,4,8,16,32,64,128,256,512", tag="blocos", width=400)
+
+                with dpg.tab(label="Cache Multinível", tag="cache_multinivel_tab"):
+                    dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size_multi", width=200)
+                    dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos_multi", width=200)
+                    dpg.add_input_int(label="N Simulações", default_value=10, tag="n_simulacoes_multi", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_text("Configuração Cache L1")
+                    dpg.add_input_int(label="Tamanho Cache L1 (Bytes)", default_value=8192, tag="tamanho_cache_l1", width=200)
+                    dpg.add_input_int(label="Associatividade L1", default_value=16, tag="associatividade_l1", width=200)
+                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L1", width=200, tag="algoritmo_l1")
+                    dpg.add_input_int(label="Tempo Acesso L1 (ns)", default_value=1, tag="tempo_l1", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_checkbox(label="Usar Cache L2", default_value=True, tag="usar_l2")
+                    dpg.add_text("Configuração Cache L2")
+                    dpg.add_input_int(label="Tamanho Cache L2 (Bytes)", default_value=32768, tag="tamanho_cache_l2", width=200)
+                    dpg.add_input_int(label="Associatividade L2", default_value=8, tag="associatividade_l2", width=200)
+                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="Algoritmo L2", width=200, tag="algoritmo_l2")
+                    dpg.add_input_int(label="Tempo Acesso L2 (ns)", default_value=5, tag="tempo_l2", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_checkbox(label="Usar Cache L3", default_value=False, tag="usar_l3")
+                    dpg.add_text("Configuração Cache L3")
+                    dpg.add_input_int(label="Tamanho Cache L3 (Bytes)", default_value=262144, tag="tamanho_cache_l3", width=200)
+                    dpg.add_input_int(label="Associatividade L3", default_value=16, tag="associatividade_l3", width=200)
+                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L3", width=200, tag="algoritmo_l3")
+                    dpg.add_input_int(label="Tempo Acesso L3 (ns)", default_value=20, tag="tempo_l3", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_text("Configuração Memória Principal")
+                    dpg.add_input_int(label="Tempo Acesso RAM (ns)", default_value=100, tag="tempo_ram", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_input_float(label="Probabilidade Temporal", default_value=0.2, tag="prob_temporal_multi", width=200)
+                    dpg.add_input_float(label="Probabilidade Espacial", default_value=0.2, tag="prob_espacial_multi", width=200)
+                    dpg.add_input_float(label="Probabilidade Região Quente", default_value=0.4, tag="prob_quente_multi", width=200)
+                    
+                    dpg.add_separator()
+                    dpg.add_input_int(label="Tamanho do Bloco", default_value=64, tag="bloco_multi", width=200)
+
+            dpg.add_separator()
+
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Simular", callback=rodar_simulacao_callback)
+                dpg.add_button(label="Simular Multinível", callback=rodar_simulacao_multinivel_callback)
+                dpg.add_button(label="Limpar Último", callback=limpar_ultimo_plot)
+                dpg.add_button(label="Limpar Plots", callback=limpar_plots)
+                dpg.add_button(label="Gerar Heatmap", callback=mapa_temporal_blocos)
+                dpg.add_button(label="Limpar Heatmap", callback=limpar_heatmap)
+                dpg.add_button(label="Sair", callback=close_callback)  # Botão manual para sair
+                dpg.add_progress_bar(tag="barra", default_value=0.0, width=300)
+                dpg.add_text("0% concluído", tag="texto")
+                dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="<-- Algoritmo de Substituição", width=100, tag="combo_algoritmo",callback=selecionar_algoritmo)
+            
+            dpg.add_separator()
+            dpg.add_input_text(label="<-- Resultado da Última Simulação", multiline=True, readonly=True, height=35, tag="resultados_box")
+            
+            dpg.add_separator()
+            dpg.add_text("", tag="mensagem_erro")
+            dpg.add_separator()
+
+            with dpg.group(horizontal=True):
+                with dpg.plot(label="Taxa de acerto vs Tamanho do Bloco", tag="plot", height=380, width=600):
+                    dpg.add_plot_legend()
+                    x_axis = dpg.add_plot_axis(dpg.mvXAxis, label="Tamanho do Bloco", tag="x_axis")
+                    y_axis = dpg.add_plot_axis(dpg.mvYAxis, label="Taxa de Acerto", tag="y_axis")
+                dpg.add_input_text(label="<-- Resumo da Simulação", multiline=True, readonly=True, height=380, width=360, default_value="", tag="Resumo")
+                
+                with dpg.group(tag="heatmap_group"):
+                    dpg.add_text("Mapa de Calor dos Acessos à Memória")
+
+        # Configuração do viewport SEM callback de fechamento
+        dpg.create_viewport(title='Simulação de Cache', width=1400, height=900)
+        
+        dpg.setup_dearpygui()
+        dpg.maximize_viewport()
+        dpg.show_viewport()
+        
+        # Só redireciona stdout DEPOIS da interface estar pronta
+        sys.stdout = DPGRedirector("Resumo")
+        
+        # Loop principal com verificação manual de fechamento
+        while dpg.is_dearpygui_running():
+            dpg.render_dearpygui_frame()
+        
+        # Limpeza final ao sair do loop principal
+        cleanup_on_exit()
+        
+    except Exception as e:
+        # Garante que stdout seja restaurado antes de imprimir erro
+        if hasattr(sys, '__stdout__'):
+            sys.stdout = sys.__stdout__
+        print(f"Erro na aplicação: {e}")
+        import traceback
+        traceback.print_exc()
+        
+    finally:
+        # Garante que o contexto seja sempre destruído
+        try:
+            if dpg.does_context_exist():
+                dpg.destroy_context()
+        except:
+            pass
+        
+        # Restaura stdout original
+        try:
+            sys.stdout = sys.__stdout__
+        except:
+            pass
+        
+        print("Aplicação finalizada com segurança.")
