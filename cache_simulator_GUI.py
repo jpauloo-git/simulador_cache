@@ -1127,8 +1127,8 @@ if __name__ == "__main__":
     try:
         dpg.create_context()
         
-        # Criar interface primeiro
-        with dpg.window(label="Simulação de Cache", width=1400, height=900):
+        # Criar interface primeiro - removendo width e height fixos
+        with dpg.window(label="Simulação de Cache", tag="Primary Window"):
             with dpg.tab_bar(tag="tab_bar"):
                 with dpg.tab(label="Cache Única", tag="cache_unica_tab"):
                     dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size", width=200)
@@ -1216,10 +1216,15 @@ if __name__ == "__main__":
                 with dpg.group(tag="heatmap_group"):
                     dpg.add_text("Mapa de Calor dos Acessos à Memória")
 
-        # Configuração do viewport SEM callback de fechamento
-        dpg.create_viewport(title='Simulação de Cache', width=1400, height=900)
+        # Configuração do viewport para ocupar 100% da tela
+        dpg.create_viewport(title='Simulação de Cache')
+        
+        # Define a janela como janela primária (ocupa todo o viewport)
+        dpg.set_primary_window("Primary Window", True)
         
         dpg.setup_dearpygui()
+        
+        # Maximiza automaticamente para ocupar toda a tela
         dpg.maximize_viewport()
         dpg.show_viewport()
         
