@@ -247,7 +247,7 @@ def simular_cache_multinivel(padrao_acesso, niveis_config, algoritmos):
                     dados_encontrados = True
                     break
                 else:
-                    # MISS
+                    # MISS - só conta se chegou até este nível
                     misses_por_nivel[nivel] += 1
             
             elif algoritmo == 'LRU':
@@ -275,16 +275,16 @@ def simular_cache_multinivel(padrao_acesso, niveis_config, algoritmos):
         # Se não encontrou em nenhum nível, acessa a RAM
         if not dados_encontrados:
             total_acessos_ram += 1
-        
-        # Carrega o bloco em todos os níveis (do RAM para cima)
-        if not dados_encontrados:
+            
+            # CORREÇÃO: Carrega o bloco em TODOS os níveis por onde passou
+            # Isso simula o comportamento real de cache multinível
             for nivel in range(n_niveis):
                 cache, num_conjuntos, associatividade, bloco_tamanho, algoritmo = caches[nivel]
                 bloco = endereco // bloco_tamanho
                 conjunto = bloco % num_conjuntos
                 conjunto_atual = cache[conjunto]
                 
-                # Insere o bloco no cache usando a política apropriada
+                # Insere o bloco no nível atual usando a política apropriada
                 if algoritmo == 'LFU':
                     if len(conjunto_atual) < associatividade:
                         conjunto_atual[bloco] = 1
@@ -1146,45 +1146,44 @@ if __name__ == "__main__":
                     dpg.add_input_text(label="Tamanhos de Bloco", default_value="2,4,8,16,32,64,128,256,512", tag="blocos", width=400)
 
                 with dpg.tab(label="Cache Multinível", tag="cache_multinivel_tab"):
-                    dpg.add_input_int(label="Memory Size", default_value=1048576, tag="memory_size_multi", width=200)
-                    dpg.add_input_int(label="Acessos", default_value=10000, tag="acessos_multi", width=200)
-                    dpg.add_input_int(label="N Simulações", default_value=10, tag="n_simulacoes_multi", width=200)
+                    dpg.add_input_int(label="Memory Size", default_value=16777216, tag="memory_size_multi", width=200)  # 16MB (2^24)
+                    dpg.add_input_int(label="Acessos", default_value=50000, tag="acessos_multi", width=200)  # Mais acessos para multinível
+                    dpg.add_input_int(label="N Simulações", default_value=5, tag="n_simulacoes_multi", width=200)  # Menos simulações (mais lento)
                     
                     dpg.add_separator()
                     dpg.add_text("Configuração Cache L1")
-                    dpg.add_input_int(label="Tamanho Cache L1 (Bytes)", default_value=8192, tag="tamanho_cache_l1", width=200)
-                    dpg.add_input_int(label="Associatividade L1", default_value=16, tag="associatividade_l1", width=200)
-                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L1", width=200, tag="algoritmo_l1")
-                    dpg.add_input_int(label="Tempo Acesso L1 (ns)", default_value=1, tag="tempo_l1", width=200)
+                    dpg.add_input_int(label="Tamanho Cache L1 (Bytes)", default_value=32768, tag="tamanho_cache_l1", width=200)  # 32KB
+                    dpg.add_input_int(label="Associatividade L1", default_value=8, tag="associatividade_l1", width=200)  # 8-way
+                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L1", width=200, tag="algoritmo_l1")  # LRU mantém
+                    dpg.add_input_int(label="Tempo Acesso L1 (ns)", default_value=1, tag="tempo_l1", width=200)  # 1ns mantém
                     
                     dpg.add_separator()
                     dpg.add_checkbox(label="Usar Cache L2", default_value=True, tag="usar_l2")
                     dpg.add_text("Configuração Cache L2")
-                    dpg.add_input_int(label="Tamanho Cache L2 (Bytes)", default_value=32768, tag="tamanho_cache_l2", width=200)
-                    dpg.add_input_int(label="Associatividade L2", default_value=8, tag="associatividade_l2", width=200)
-                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='FIFO', label="Algoritmo L2", width=200, tag="algoritmo_l2")
-                    dpg.add_input_int(label="Tempo Acesso L2 (ns)", default_value=5, tag="tempo_l2", width=200)
+                    dpg.add_input_int(label="Tamanho Cache L2 (Bytes)", default_value=262144, tag="tamanho_cache_l2", width=200)  # 256KB
+                    dpg.add_input_int(label="Associatividade L2", default_value=8, tag="associatividade_l2", width=200)  # 8-way
+                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L2", width=200, tag="algoritmo_l2")  # LRU
+                    dpg.add_input_int(label="Tempo Acesso L2 (ns)", default_value=10, tag="tempo_l2", width=200)  # 10ns
                     
                     dpg.add_separator()
-                    dpg.add_checkbox(label="Usar Cache L3", default_value=False, tag="usar_l3")
+                    dpg.add_checkbox(label="Usar Cache L3", default_value=True, tag="usar_l3")  # Habilitar L3 por padrão
                     dpg.add_text("Configuração Cache L3")
-                    dpg.add_input_int(label="Tamanho Cache L3 (Bytes)", default_value=262144, tag="tamanho_cache_l3", width=200)
-                    dpg.add_input_int(label="Associatividade L3", default_value=16, tag="associatividade_l3", width=200)
-                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L3", width=200, tag="algoritmo_l3")
-                    dpg.add_input_int(label="Tempo Acesso L3 (ns)", default_value=20, tag="tempo_l3", width=200)
+                    dpg.add_input_int(label="Tamanho Cache L3 (Bytes)", default_value=2097152, tag="tamanho_cache_l3", width=200)  # 2MB
+                    dpg.add_input_int(label="Associatividade L3", default_value=16, tag="associatividade_l3", width=200)  # 16-way
+                    dpg.add_combo(items=["FIFO", "LRU", "LFU", "Random"], default_value='LRU', label="Algoritmo L3", width=200, tag="algoritmo_l3")  # LRU
+                    dpg.add_input_int(label="Tempo Acesso L3 (ns)", default_value=30, tag="tempo_l3", width=200)  # 30ns
                     
                     dpg.add_separator()
                     dpg.add_text("Configuração Memória Principal")
-                    dpg.add_input_int(label="Tempo Acesso RAM (ns)", default_value=100, tag="tempo_ram", width=200)
+                    dpg.add_input_int(label="Tempo Acesso RAM (ns)", default_value=200, tag="tempo_ram", width=200)  # 200ns
                     
                     dpg.add_separator()
-                    dpg.add_input_float(label="Probabilidade Temporal", default_value=0.2, tag="prob_temporal_multi", width=200)
-                    dpg.add_input_float(label="Probabilidade Espacial", default_value=0.2, tag="prob_espacial_multi", width=200)
-                    dpg.add_input_float(label="Probabilidade Região Quente", default_value=0.4, tag="prob_quente_multi", width=200)
+                    dpg.add_input_float(label="Probabilidade Temporal", default_value=0.3, tag="prob_temporal_multi", width=200)  # Maior localidade temporal
+                    dpg.add_input_float(label="Probabilidade Espacial", default_value=0.3, tag="prob_espacial_multi", width=200)  # Maior localidade espacial
+                    dpg.add_input_float(label="Probabilidade Região Quente", default_value=0.3, tag="prob_quente_multi", width=200)  # Distribuição equilibrada
                     
                     dpg.add_separator()
-                    dpg.add_input_int(label="Tamanho do Bloco", default_value=64, tag="bloco_multi", width=200)
-
+                    dpg.add_input_int(label="Tamanho do Bloco", default_value=64, tag="bloco_multi", width=200)  # 64 bytes mantém
             dpg.add_separator()
 
             with dpg.group(horizontal=True):
